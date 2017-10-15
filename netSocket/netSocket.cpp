@@ -14,11 +14,11 @@
 #define FILE_NAME_MAX_SIZE 512
 
 struct FILESEND {
-	long id = 0;
-	float size = 0;
-	int end = 0;
-	char name[FILE_NAME_MAX_SIZE];
-	char content[BUF_SIZE];
+	long id = 0;							//文件包编号
+	float size = 0;							//文件大小
+	int end = 0;							//文件结束标志
+	char name[FILE_NAME_MAX_SIZE];			//文件名
+	char content[BUF_SIZE];					//文件包缓冲区
 };
 
 int main()
@@ -37,13 +37,17 @@ int main()
 	int iResult,iSendResult;
 	int recvbuflen = BUF_SIZE;
 
+	//初始化WSA
 	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (iResult) {
 		printf("WSAStartup failed:%d\n", iResult);
 		return 1;
 	}
+	//协议信息
 	ZeroMemory(&hints, sizeof(hints));
+	//ipv4
 	hints.ai_family = AF_INET;
+	//TCP
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_PASSIVE;
@@ -53,6 +57,7 @@ int main()
 		WSACleanup();
 		return 1;
 	}
+	//初始化服务器socket
 	ListnSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
 	if (ListnSocket == INVALID_SOCKET) {
 		printf("Error at socket():%d\n", WSAGetLastError());
@@ -60,6 +65,7 @@ int main()
 		WSACleanup();
 		return 1;
 	}
+	//绑定ip端口
 	iResult = bind(ListnSocket, result->ai_addr, (int)result->ai_addrlen);
 	if (iResult == SOCKET_ERROR) {
 		printf("bind failed with error:%d\n", WSAGetLastError());
@@ -69,6 +75,7 @@ int main()
 		return 1;
 	}
 	freeaddrinfo(result);
+	//监听
 	if (listen(ListnSocket, SOMAXCONN) == SOCKET_ERROR) {
 		printf("Listen failed width error:%d\n", WSAGetLastError());
 		closesocket(ListnSocket);
@@ -87,7 +94,8 @@ int main()
 		sockaddr_in clnAddr;
 		int addrLen = sizeof(clnAddr);
 		char addrStr[20];
-
+		
+		//初始化连接socket
 		ClientSocket = accept(ListnSocket, (SOCKADDR*)&clnAddr, &addrLen);
 		if (ClientSocket == INVALID_SOCKET) {
 			printf("accept failed:%d\n", WSAGetLastError());
@@ -95,6 +103,7 @@ int main()
 			WSACleanup();
 			return 1;
 		}
+		//获取客户端ip
 		inet_ntop(AF_INET, (void*)&clnAddr.sin_addr, addrStr, sizeof(addrStr));
 		printf("%s login\n", addrStr);
 		//发送欢迎
@@ -111,6 +120,7 @@ int main()
 			printf("%s download %s\n", addrStr,recvbuf);
 			strncpy_s(fileName,recvbuf,strlen(recvbuf) > FILE_NAME_MAX_SIZE ? FILE_NAME_MAX_SIZE : strlen(recvbuf));
 
+			//打开文件
 			FILE *fp;
 			fopen_s(&fp,fileName, "rb");
 			float fileSize = 0;
@@ -124,11 +134,15 @@ int main()
 			}
 
 			//ZeroMemory(sendbuf, sizeof(sendbuf));
+
+			//计算文件大小
 			fseek(fp, 0, SEEK_END);
 			fileSize = ftell(fp);
 			fileSize = fileSize / sizeof(char);					//byte
-			printf("size of char:%d\n", sizeof(char));
+			//printf("size of char:%d\n", sizeof(char));
 			//fileSize = fileSize / 1024;						//KB
+
+			//重置文件指针位置
 			fseek(fp, 0, SEEK_SET);
 			strcpy_s(fileS.name, fileName);
 			fileS.size = fileSize;
@@ -148,6 +162,7 @@ int main()
 			iResult = recv(ClientSocket, (char*)&fileS, sizeof(fileS), 0);
 			if (iResult > 0) {
 				printf("ID:%ld\n", fileS.id);
+				//移动文件指针准备重传
 				if (!fileS.end&&fileS.id > 0) {
 					fseek(fp, BUF_SIZE*fileS.id, SEEK_CUR);
 				}
@@ -171,7 +186,9 @@ int main()
 
 			//发送文件
 			while ((sendLen = fread(fileS.content, sizeof(char), BUF_SIZE, fp)) > 0) {
+				//判断文件是否结束
 				if (feof(fp))fileS.end = 1;
+				//发送文件包
 				iSendResult = send(ClientSocket, (char*)&fileS, sizeof(fileS), 0);
 				if (iSendResult == SOCKET_ERROR) {
 					printf("send file %s failed:%d\n", fileName,WSAGetLastError());
